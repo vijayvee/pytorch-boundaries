@@ -49,6 +49,7 @@ flags.DEFINE_string("data_dir", "",
 flags.DEFINE_string("expt_name", "",
                     "Name of experiment w/ hyperparams")
 
+global_step = 0
 
 def get_params_dict(params_dict, 
                     base_lr, weight_decay):
@@ -115,6 +116,7 @@ def get_params_dict(params_dict,
 def train_epoch(model, train_dataloader,
                 criterion, optimizer, writer):
   """Train one epoch."""
+  global global_step
   model.train()
   start_time = time.time()
   iter_loss = 0
@@ -149,13 +151,14 @@ def train_epoch(model, train_dataloader,
     if not idx % FLAGS.update_iters:
       # Update parameters
       print("Iter (%s) - Loss: %.4f" % (idx, iter_loss.item()))
+      global_step = global_step + idx // FLAGS.update_iters
       side_outputs = [side_output_1, side_output_2,
                       side_output_3, side_output_4,
                       side_output_5, fused_output
                       ]
       side_outputs = [torch.sigmoid(i) 
                       for i in side_outputs]
-      add_summary(writer, idx // FLAGS.update_iters, iter_loss, 
+      add_summary(writer, global_step, iter_loss, 
                   imgs, lbls, side_outputs)
       optimizer.step()
       optimizer.zero_grad()
@@ -206,6 +209,8 @@ def main(argv):
     optimizer = torch.optim.SGD(params, momentum=0.9,
                                 weight_decay=weight_decay,
                                 lr=base_lr)
+  scheduler = torch.optim.lr_scheduler.ExponentialLR(
+    optimizer=optimizer, gamma=0.1)
   optimizer.zero_grad()
   criterion = cross_entropy_loss2d
   writer = SummaryWriter("runs/%s" % FLAGS.expt_name)
@@ -213,7 +218,10 @@ def main(argv):
   for epoch_idx in range(FLAGS.num_epochs):
     train_epoch(model, train_dataloader,
                 criterion, optimizer, writer)
-    if epoch_idx % FLAGS.save_epoch:
+    if not epoch_idx % (FLAGS.num_epochs // 3):
+      # Decay learning rate every num_epochs/3 epochs
+      scheduler.step()
+    if not epoch_idx % FLAGS.save_epoch:
       torch.save(model.state_dict(),
                  os.path.join(FLAGS.base_dir,
                               "%s-%s.pth" % (FLAGS.expt_name,
