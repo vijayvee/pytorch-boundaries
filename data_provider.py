@@ -65,33 +65,14 @@ class BSDSDataProvider(object):
   def transform(self, images, labels):
     """Transform images and ground truth."""
     if self.is_training:
-      seed = np.random.randint(2**32) # make a seed with numpy generator 
-      np.random.seed(seed) # apply this seed to img tranfsorms
-      torch.manual_seed(seed)
-      resize_transform_img = transforms.RandomResizedCrop(self.image_size, 
-                                                      scale=(0.75, 1.25),
-                                                      ratio=(0.9, 1.1))
-      images = resize_transform_img(images)
-
-      np.random.seed(seed) # apply this seed to target tranfsorms
-      torch.manual_seed(seed) # needed for torchvision 0.7
-      resize_transform_gt = transforms.RandomResizedCrop(self.image_size, 
-                                                      scale=(0.75, 1.25),
-                                                      ratio=(0.9, 1.1))
-      labels = resize_transform_gt(labels)
-      
       color_transform = transforms.ColorJitter(brightness=0.3,
                                                contrast=0.3,
                                                saturation=0.3,
                                                hue=0.1
                                                )
       images = color_transform(images)
-    images = np.array(images)
-    labels = np.array(labels)
-    # Renormalize labels to [0, 1]
-    labels = (labels - labels.min())/(labels.max() - labels.min())
-    images = F.to_tensor(images)
-    labels = F.to_tensor(labels)
+    images = F.to_tensor(np.array(images))
+    labels = F.to_tensor(np.array(labels))
     return images, labels
 
   def __getitem__(self, idx):
