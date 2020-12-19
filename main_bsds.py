@@ -151,7 +151,7 @@ def train_epoch(model, train_dataloader,
     if not idx % FLAGS.update_iters:
       # Update parameters
       print("Iter (%s) - Loss: %.4f" % (idx, iter_loss.item()))
-      global_step = global_step + idx // FLAGS.update_iters
+      global_step += 1
       side_outputs = [side_output_1, side_output_2,
                       side_output_3, side_output_4,
                       side_output_5, fused_output
