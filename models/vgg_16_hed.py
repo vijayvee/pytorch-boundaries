@@ -32,6 +32,9 @@ class VGG_HED(nn.Module):
     self.rgb_std = torch.Tensor(self.rgb_std).float().cuda()
 
     model = models.vgg16(pretrained=True).cuda()
+    # Pad input before VGG
+    self.first_padding = nn.ReflectionPad2d(21)
+
     self.conv_1 = self.extract_layer(model, "vgg16", 1)
     self.conv_2 = self.extract_layer(model, "vgg16", 2)
     self.conv_3 = self.extract_layer(model, "vgg16", 3)
@@ -92,34 +95,38 @@ class VGG_HED(nn.Module):
     return inputs
   
   def forward(self, inputs):
+    _, _, h, w = inputs.shape
     net = self.standardize(inputs)
+    net = self.first_padding(net)
     net = self.conv_1(net)
-    self.side_output_1 = self.dsn1_bn(
-                            self.dsn1(net))
+    self.side_output_1 = crop_tensor(
+                          self.dsn1_bn(
+                            self.dsn1(net)),
+                          h, w)
     net = self.conv_2(net)
     self.side_output_2 = crop_tensor(
                           self.dsn2_up(
                             self.dsn2_bn(
                               self.dsn2(net))),
-                          inputs)
+                          h, w)
     net = self.conv_3(net)
     self.side_output_3 = crop_tensor(
                           self.dsn3_up(
                             self.dsn3_bn(
                               self.dsn3(net))),
-                          inputs)
+                          h, w)
     net = self.conv_4(net)
     self.side_output_4 = crop_tensor(
                           self.dsn4_up(
                             self.dsn4_bn(
                               self.dsn4(net))),
-                          inputs)
+                          h, w)
     net = self.conv_5(net)
     self.side_output_5 = crop_tensor(
                           self.dsn5_up(
                             self.dsn5_bn(
                               self.dsn5(net))),
-                          inputs)
+                          h, w)
     stacked_outputs = torch.cat((self.side_output_1,
                                  self.side_output_2,
                                  self.side_output_3,
