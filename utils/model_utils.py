@@ -5,10 +5,9 @@ import torch  # pylint: disable=import-error
 import torchvision.transforms as transforms  # pylint: disable=import-error
 
 
-def crop_tensor(net, inputs):
+def crop_tensor(net, out_h, out_w):
   """Crop net to input height and width."""
   _, _, in_h, in_w = net.shape
-  _, _, out_h, out_w = inputs.shape
   assert in_h >= out_h and in_w >= out_w
   x_offset = (in_w - out_w) // 2
   y_offset = (in_h - out_h) // 2
