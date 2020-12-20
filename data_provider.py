@@ -62,7 +62,7 @@ class BSDSDataProvider(object):
         self.img_gt_paths.append((img, gt))
     self.num_samples = len(self.img_gt_paths)
 
-  def transform(self, images, labels):
+  def transform(self, images, labels, xmax=255.):
     """Transform images and ground truth."""
     if self.is_training:
       color_transform = transforms.ColorJitter(brightness=0.3,
@@ -71,8 +71,13 @@ class BSDSDataProvider(object):
                                                hue=0.1
                                                )
       images = color_transform(images)
-    images = F.to_tensor(np.array(images))
-    labels = F.to_tensor(np.array(labels))
+    images, labels = np.array(images), np.array(labels)
+    if images.max() > 1.:
+      images = images / 255
+    if labels.max() > 1.:
+      labels = labels / 255
+    images = F.to_tensor(images * xmax)
+    labels = F.to_tensor(labels)
     return images, labels
 
   def __getitem__(self, idx):
