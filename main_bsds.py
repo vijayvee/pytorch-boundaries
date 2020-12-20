@@ -56,10 +56,10 @@ def get_params_dict(params_dict,
   """Get parameter-specific training hyperparams."""
   params = []
   for k, v in params_dict.items():
-    if re.match("conv_[1-4]_[1-3]*", k):
+    if re.match("conv_[1-4]*", k):
       if "weight" in k:
         params += [{'params': v, 
-                    'lr': base_lr*1, 
+                    'lr': base_lr*1,
                     'weight_decay': weight_decay*1,
                     'name': k}]
       if "bias" in k:
@@ -67,7 +67,7 @@ def get_params_dict(params_dict,
                     'lr': base_lr*2, 
                     'weight_decay': 0,
                     'name': k}]
-    elif re.match("conv_5_[1-3]*", k):
+    elif re.match("conv_5*", k):
       if "weight" in k:
         params += [{'params': v, 
                     'lr': base_lr*100, 
@@ -92,23 +92,24 @@ def get_params_dict(params_dict,
     elif re.match("dsn[1-5]*", k):
       if "weight" in k:
         params += [{'params': v, 
-                    'lr': 0.01, 
+                    'lr': base_lr*0.01, 
                     'weight_decay': 1,
                     'name': k}]
       if "bias" in k:
         params += [{'params': v,
-                    'lr': 0.02, 
+                    'lr': base_lr*0.02, 
                     'weight_decay': 0,
                     'name': k}]
     else:
+      print("Learning rate for %s" % k)
       if "weight" in k:
         params += [{'params': v, 
-                    'lr': 0.001, 
+                    'lr': base_lr*0.001, 
                     'weight_decay': 1,
                     'name': k}]
       if "bias" in k:
         params += [{'params': v,
-                    'lr': 0.002, 
+                    'lr': base_lr*0.002, 
                     'weight_decay': 0,
                     'name': k}]
   return params
@@ -169,16 +170,20 @@ def train_epoch(model, train_dataloader,
 def add_summary(writer, idx, loss, 
                 images, labels, outputs):
   """Write tensorboard summaries."""
-  img_grid = torchvision.utils.make_grid(images)
+  output_titles = ["side_output_%s" % i for i in range(1, 6)]
+  output_titles += ["fused_prediction"]
+  img_grid = torchvision.utils.make_grid(images/255)
   labels_grid = torchvision.utils.make_grid(labels)
   outputs_grid = [torchvision.utils.make_grid(output)
                   for output in outputs]
 
   writer.add_scalar("Loss/train", loss, idx)
-  writer.add_image("Train/images", img_grid, idx)
-  writer.add_image("Train/labels", labels_grid, idx)
-  for ii, output_grid in enumerate(outputs_grid):
-    writer.add_image("Train/side_outputs_%s" % ii, 
+  writer.add_scalar("Limits/Images_Max", images.max(), idx)
+  writer.add_scalar("Limits/Labels_Max", labels.max(), idx)
+  writer.add_image("Images/images", img_grid, idx)
+  writer.add_image("Labels/labels", labels_grid, idx)
+  for ii, (output_grid, output_title) in enumerate(zip(outputs_grid, output_titles)):
+    writer.add_image("Predictions/%s" % output_title, 
                      output_grid, idx)
   return
 
@@ -194,7 +199,7 @@ def main(argv):
                                                  batch_size=FLAGS.batch_size, 
                                                  shuffle=True,
                                                  num_workers=FLAGS.batch_size)
-  model_cfg = vgg16_hed_config("vgg_16", 400,
+  model_cfg = vgg16_hed_config("vgg16_bn", 400,
                                1, False, False)
   model = VGG_HED(model_cfg)
   model.to(device)
@@ -214,7 +219,8 @@ def main(argv):
   optimizer.zero_grad()
   criterion = cross_entropy_loss2d
   writer = SummaryWriter("runs/%s" % FLAGS.expt_name)
-  
+  # TODO(vveeraba): Write learning rates to tensorboard
+  # log_learning_rates(params, writer)
   for epoch_idx in range(FLAGS.num_epochs):
     train_epoch(model, train_dataloader,
                 criterion, optimizer, writer)
