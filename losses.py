@@ -21,12 +21,12 @@ def cross_entropy_loss2d(inputs, targets, loss_fun=None):
     pos_count = where_pos.sum()
     neg_count = where_neg.sum()
     valid = pos_count + neg_count
-    weights[i, where_pos] = neg_count * 1. / valid
+    weights[i, where_pos] = neg_count / valid
     weights[i, where_neg] = pos_count * balance / valid
   weights = torch.Tensor(weights).cuda()
 
   if loss_fun is None:
     loss_fun = F.binary_cross_entropy_with_logits
   loss = loss_fun(inputs, targets,
-                  weights, reduce=True)
+                  weights, size_average=False)
   return loss
