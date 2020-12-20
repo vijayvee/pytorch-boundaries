@@ -6,8 +6,10 @@ import numpy as np
 import torch  # pylint:disable=import-error
 import torchvision.transforms as transforms  # pylint:disable=import-error
 import torchvision.transforms.functional as F  # pylint:disable=import-error
+from absl import flags
 from PIL import Image
 
+FLAGS = flags.FLAGS
 _IMAGENET_MEAN = np.array([])
 
 def load_img(img_path):
@@ -64,6 +66,7 @@ class BSDSDataProvider(object):
 
   def transform(self, images, labels, xmax=255.):
     """Transform images and ground truth."""
+    gamma = FLAGS.label_gamma
     if self.is_training:
       color_transform = transforms.ColorJitter(brightness=0.3,
                                                contrast=0.3,
@@ -76,6 +79,7 @@ class BSDSDataProvider(object):
       images = images / 255
     if labels.max() > 1.:
       labels = labels / 255
+    labels[labels >= gamma] = 1.
     images = F.to_tensor(images * xmax)
     labels = F.to_tensor(labels)
     return images, labels
