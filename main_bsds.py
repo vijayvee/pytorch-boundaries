@@ -136,12 +136,12 @@ def train_epoch(model, train_dataloader,
     side_output_5 = tensors["side_output_5"].float()
     fused_output = tensors["fused_output"].float()
     
-    side_loss_1 = criterion(side_output_1, lbls, loss_fun=loss_fun)
-    side_loss_2 = criterion(side_output_2, lbls, loss_fun=loss_fun)
-    side_loss_3 = criterion(side_output_3, lbls, loss_fun=loss_fun)
-    side_loss_4 = criterion(side_output_4, lbls, loss_fun=loss_fun)
-    side_loss_5 = criterion(side_output_5, lbls, loss_fun=loss_fun)
-    fused_loss = criterion(fused_output, lbls, loss_fun=loss_fun)
+    side_loss_1, _ = criterion(side_output_1, lbls, loss_fun=loss_fun)
+    side_loss_2, _ = criterion(side_output_2, lbls, loss_fun=loss_fun)
+    side_loss_3, _ = criterion(side_output_3, lbls, loss_fun=loss_fun)
+    side_loss_4, _ = criterion(side_output_4, lbls, loss_fun=loss_fun)
+    side_loss_5, _ = criterion(side_output_5, lbls, loss_fun=loss_fun)
+    fused_loss, targets_confident = criterion(fused_output, lbls, loss_fun=loss_fun)
     
     total_loss = fused_loss + side_loss_1 + \
                  side_loss_2 + side_loss_3 + \
@@ -160,7 +160,7 @@ def train_epoch(model, train_dataloader,
       side_outputs = [torch.sigmoid(i) 
                       for i in side_outputs]
       add_summary(writer, global_step, iter_loss, 
-                  imgs, lbls, side_outputs)
+                  imgs, lbls, side_outputs, targets_confident)
       optimizer.step()
       optimizer.zero_grad()
       iter_loss = 0
@@ -168,7 +168,7 @@ def train_epoch(model, train_dataloader,
 
 
 def add_summary(writer, idx, loss, 
-                images, labels, outputs):
+                images, labels, outputs, labels_confident):
   """Write tensorboard summaries."""
   output_titles = ["side_output_%s" % i for i in range(1, 6)]
   output_titles += ["fused_prediction"]
@@ -176,12 +176,14 @@ def add_summary(writer, idx, loss,
   labels_grid = torchvision.utils.make_grid(labels)
   outputs_grid = [torchvision.utils.make_grid(output)
                   for output in outputs]
+  labels_conf_grid = torchvision.utils.make_grid(labels_confident)
 
   writer.add_scalar("Loss/train", loss, idx)
   writer.add_scalar("Limits/Images_Max", images.max(), idx)
   writer.add_scalar("Limits/Labels_Max", labels.max(), idx)
   writer.add_image("Images/images", img_grid, idx)
-  writer.add_image("Labels/labels", labels_grid, idx)
+  writer.add_image("Labels/labels_unfiltered", labels_grid, idx)
+  writer.add_image("Labels/labels_filtered", labels_conf_grid, idx)
   for ii, (output_grid, output_title) in enumerate(zip(outputs_grid, output_titles)):
     writer.add_image("Predictions/%s" % output_title, 
                      output_grid, idx)
