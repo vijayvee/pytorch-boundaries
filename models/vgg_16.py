@@ -10,7 +10,7 @@ class VGG(nn.Module):
   def __init__(self, config):
     super(VGG, self).__init__()
     self.rgb_mean = np.array((0.485, 0.456, 0.406))
-    self.rgb_std=np.array((0.229, 0.224, 0.225))
+    self.rgb_std = np.array((0.229, 0.224, 0.225))
     # Convert to n, c, h, w
     self.rgb_mean = self.rgb_mean.reshape((1, 3, 1, 1))
     self.rgb_mean = torch.Tensor(self.rgb_mean).float().cuda()
