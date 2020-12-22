@@ -209,15 +209,20 @@ def main(argv):
   weight_decay = FLAGS.weight_decay
   params = get_params_dict(dict(model.named_parameters()),
                            base_lr, weight_decay)
+
   if FLAGS.optimizer.startswith("adam"):
-    optimizer = torch.optim.Adam(model.parameters(), lr=base_lr,
-                                 weight_decay=weight_decay)
+    if weight_decay:
+      optimizer = torch.optim.Adam(model.parameters(), lr=base_lr,
+                                  weight_decay=weight_decay)
+    else:
+      print("Weight decay set to", weight_decay)
+      optimizer = torch.optim.Adam(model.parameters(), lr=base_lr)
   else:
     optimizer = torch.optim.SGD(params, momentum=0.9,
                                 weight_decay=weight_decay,
                                 lr=base_lr)
   scheduler = torch.optim.lr_scheduler.ExponentialLR(
-    optimizer=optimizer, gamma=0.1)
+              optimizer=optimizer, gamma=0.1)
   optimizer.zero_grad()
   criterion = cross_entropy_loss2d
   writer = SummaryWriter("runs/%s" % FLAGS.expt_name)
@@ -230,10 +235,13 @@ def main(argv):
       # Decay learning rate every num_epochs/3 epochs
       scheduler.step()
     if not epoch_idx % FLAGS.save_epoch:
+      ckpt_dir = os.path.join(FLAGS.base_dir, 
+                              FLAGS.expt_name)
+      if not os.path.exists(ckpt_dir):
+        os.mkdir(ckpt_dir)
       torch.save(model.state_dict(),
-                 os.path.join(FLAGS.base_dir,
-                              "%s-%s.pth" % (FLAGS.expt_name,
-                                             epoch_idx)))
+                 os.path.join(ckpt_dir,
+                              "saved-model-epoch-%s.pth" % (epoch_idx)))
   full_duration = time.time() - full_start
   print("Training finished until" \
         "%s epochs in %s" % (FLAGS.num_epochs,
