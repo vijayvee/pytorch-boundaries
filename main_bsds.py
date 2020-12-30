@@ -30,12 +30,16 @@ flags.DEFINE_float("label_gamma", 0.4,
                    "Gamma for label consensus sampling")
 flags.DEFINE_float("label_lambda", 1.1,
                    "Positive weight for wce")
+flags.DEFINE_boolean("use_val_for_train", False,
+                     "Whether to use validation images (only after hparam search)")
 flags.DEFINE_integer("batch_size", 1,
                    "Batch size for train/eval")
 flags.DEFINE_integer("num_epochs", 15,
                      "Number of training epochs")
 flags.DEFINE_integer("save_epoch", 1,
                      "Checkpoint saving frequency (in epochs)")
+flags.DEFINE_integer("decay_epochs", 5,
+                     "lr decay frequency (in epochs)")
 flags.DEFINE_integer("v1_timesteps", 0,
                      "Number of V1Net timesteps")
 flags.DEFINE_integer("update_iters", 10,
@@ -46,6 +50,8 @@ flags.DEFINE_string("base_dir", "bsds_experiments",
                     "Base directory to store experiments")
 flags.DEFINE_string("data_dir", "",
                     "Data directory with BSDS500 images")
+flags.DEFINE_string("checkpoint", "",
+                    "Checkpoint file for restore and train")
 flags.DEFINE_string("expt_name", "",
                     "Name of experiment w/ hyperparams")
 
@@ -151,7 +157,9 @@ def train_epoch(model, train_dataloader,
 
     if not idx % FLAGS.update_iters:
       # Update parameters
-      print("Iter (%s) - Loss: %.4f" % (idx, iter_loss.item()))
+      p_epoch_idx = (global_step * FLAGS.update_iters) // len(train_dataloader)
+      print("Epoch(%s) - Iter (%s) - Loss: %.4f" % (p_epoch_idx,
+                                                    idx, iter_loss.item()))
       global_step += 1
       side_outputs = [side_output_1, side_output_2,
                       side_output_3, side_output_4,
@@ -193,6 +201,15 @@ def add_summary(writer, idx, loss,
 def main(argv):
   del argv  # unused here
   device = "cuda"
+  flag_args = FLAGS.flag_values_dict()
+
+  expt_dir = os.path.join(FLAGS.base_dir, 
+                          FLAGS.expt_name)
+  if not os.path.exists(expt_dir):
+    os.mkdir(expt_dir)
+  with open(os.path.join(expt_dir, "FLAGS.txt"), "w") as f:
+    f.write(str(flag_args))
+    
   full_start = time.time()
   train_data = BSDSDataProvider(image_size=400,
                                 is_training=True,
@@ -205,6 +222,12 @@ def main(argv):
                                1, False, False)
   model = VGG_HED(model_cfg)
   model.to(device)
+
+  if FLAGS.checkpoint:
+    print("Restoring from %s" % FLAGS.checkpoint)
+    state_dict = torch.load(FLAGS.checkpoint)
+    model.load_state_dict(state_dict)
+
   base_lr = FLAGS.learning_rate
   weight_decay = FLAGS.weight_decay
   params = get_params_dict(dict(model.named_parameters()),
@@ -231,7 +254,7 @@ def main(argv):
   for epoch_idx in range(FLAGS.num_epochs):
     train_epoch(model, train_dataloader,
                 criterion, optimizer, writer)
-    if not epoch_idx % (FLAGS.num_epochs // 3):
+    if not epoch_idx % FLAGS.decay_epochs:
       # Decay learning rate every num_epochs/3 epochs
       scheduler.step()
     if not epoch_idx % FLAGS.save_epoch:

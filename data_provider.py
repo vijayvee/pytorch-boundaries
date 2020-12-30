@@ -47,7 +47,12 @@ class BSDSDataProvider(object):
     if self.is_training:
       self.data_file = os.path.join(self.data_dir,
                                      "train_pair.lst")
-      self.img_ids = get_train_val_ids()["train"]
+      if FLAGS.use_val_for_train:
+        print("NOTE:Using validation images too!!")
+        img_ids = get_train_val_ids()
+        self.img_ids = img_ids["train"] + img_ids["val"]
+      else:
+        self.img_ids = get_train_val_ids()["train"]
     else:
       self.data_file = os.path.join(self.data_dir,
                                     "train_pair.lst")
