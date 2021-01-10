@@ -8,7 +8,9 @@ from torch.nn import functional as F  # pylint:disable=import-error
 FLAGS = flags.FLAGS
 
 def cross_entropy_loss2d(inputs, targets, loss_fun=None):
-  """Compute weighted cross entropy loss."""
+  """Compute weighted cross entropy loss.
+  https://github.com/xwjabc/hed/blob/master/hed.py
+  """
   n, c, h, w = inputs.size()
   weights = np.zeros((n, c, h, w))
   targets_confident = np.zeros((n, c, h, w))
@@ -30,6 +32,6 @@ def cross_entropy_loss2d(inputs, targets, loss_fun=None):
 
   if loss_fun is None:
     loss_fun = F.binary_cross_entropy_with_logits
-  loss = loss_fun(inputs, targets,
-                  weights, size_average=False)
+  loss = loss_fun(inputs.float(), targets.float(),
+                  weights, size_average=False)/n
   return loss, targets_confident
