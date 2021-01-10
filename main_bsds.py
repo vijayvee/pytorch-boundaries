@@ -5,15 +5,14 @@ import sys
 import time
 
 import numpy as np
-
 import torch  # pylint: disable=import-error
 import torch.nn as nn  # pylint: disable=import-error
 import torch.optim as optim  # pylint: disable=import-error
 import torchvision  # pylint: disable=import-error
-
 from absl import app, flags
 from torch.nn import functional as F  # pylint: disable=import-error
-from torch.utils.tensorboard import SummaryWriter  # pylint: disable=import-error
+from torch.utils.tensorboard import \
+    SummaryWriter  # pylint: disable=import-error
 
 from pytorch_boundaries.data_provider import BSDSDataProvider
 from pytorch_boundaries.losses import cross_entropy_loss2d
