@@ -3,12 +3,14 @@ import glob
 import os
 
 import numpy as np
+import skimage.io as io  # pylint: disable=import-error
 import torch  # pylint:disable=import-error
 import torchvision.transforms as transforms  # pylint:disable=import-error
 import torchvision.transforms.functional as F  # pylint:disable=import-error
-from absl import flags
+from absl import app, flags
 from PIL import Image
 from scipy.io import savemat
+from tqdm import tqdm
 
 from pytorch_boundaries.data_provider import BSDSDataProvider
 from pytorch_boundaries.models.vgg16_config import vgg16_hed_config
@@ -16,10 +18,10 @@ from pytorch_boundaries.models.vgg_16_hed import VGG_HED
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("checkpointdir", "",
+flags.DEFINE_string("ckpt_dir", "",
                     "Checkpoint file path")
 
-flags.DEFINE_string("outdir", "",
+flags.DEFINE_string("out_dir", "",
                     "Output file path")
 
 outputs = ["side_output_1",
@@ -36,9 +38,28 @@ outputs = ["side_output_1",
 
 def get_model():
   """Load VGG-HED model."""
-  cfg = vgg16_hed_config("vgg16_bn", 400, 1, False, False)
+  cfg = vgg16_hed_config("vgg16", 400, 1, False, False)
   model = VGG_HED(cfg)
   return model
+
+
+def save_image(image, prefix=None,
+               path=None, curr_idx=None):
+  """Write images to disk."""
+  if curr_idx:
+    filename = "%s_%04d.png" % (prefix.split('.')[0], 
+                                curr_idx)
+  else:
+    filename = "%s.png" % prefix.split('.')[0]
+  filename = os.path.join(path, filename)
+  if image.shape[0] == 1:
+    # Saves only one image
+    image = image[0]
+  if image.shape[0] == 1:
+    image = image[0,:,:]
+  image = np.uint8(image*255.)
+  io.imsave(filename, image)
+  return filename
 
 
 def save_mat(image, prefix=None,
@@ -53,9 +74,10 @@ def save_mat(image, prefix=None,
   if image.shape[0] == 1:
     # Saves only one image
     image = image[0]
-  if image.shape[-1] == 1:
-    image = image[:,:,0]
+  if image.shape[0] == 1:
+    image = image[0,:,:]
   mat_dict = {"predictions": image}
+  print("Saving %s, " % prefix, image.shape)
   savemat(filename, mat_dict)
   return filename
 
@@ -83,16 +105,24 @@ def get_test_images(image_idx, split="test"):
   return test_img_tensor, test_img_np
 
 
-def evaluate():
+def main(argv):
   """Evaluation loop."""
-  d_outdir = {}
-  for output in outputs:
-    outdir = os.path.join(FLAGS.outdir, output)
-    os.mkdir(outdir)
-    d_outdir[output] = outdir
+  del argv  # unused here
+  d_out_dir = {}
+  if not os.path.exists(FLAGS.out_dir):
+    os.mkdir(FLAGS.out_dir)
 
-  l_checkpoints = glob.glob("%s/*pth" % FLAGS.checkpointdir)
+  l_checkpoints = glob.glob("%s/*.pth" % FLAGS.ckpt_dir)
   for checkpoint in l_checkpoints:
+    print("Evaluating %s" % checkpoint.split("/")[-1])
+    ckpt_out_dir = os.path.join("%s-eval" % checkpoint)
+    if not os.path.exists(ckpt_out_dir):
+      os.mkdir(ckpt_out_dir)
+    for output in outputs:
+      out_dir = os.path.join(ckpt_out_dir, output)
+      if not os.path.exists(out_dir):
+        os.mkdir(out_dir)
+      d_out_dir[output] = out_dir
     with torch.no_grad():
       model = get_model()
       model.to("cuda")
@@ -100,8 +130,9 @@ def evaluate():
       model.load_state_dict(state_dict)
       model.eval()
       test_imgs = get_test_idxs()
-      for img in test_imgs:
+      for img in tqdm(test_imgs):
         tch_img, _ = get_test_images(img)
+        tch_img = tch_img.float().cuda()
         preds = model(tch_img)
         nppreds = {k: torch.sigmoid(v).cpu().numpy() 
                       for k, v in preds.items()}
@@ -119,8 +150,11 @@ def evaluate():
         nppreds["gated_fusion"] = (nppreds["fused_output"] \
                                   + nppreds["gated_output"])/2
         for output, nppred in nppreds.items():
-          save_mat(nppred, img, d_outdir[output])
+          if "fused" in output:
+            save_mat(nppred, img, d_out_dir[output])
+            save_image(nppred, img, d_out_dir[output])
 
 
-
+if __name__ == "__main__":
+  app.run(main)
 
