@@ -7,11 +7,14 @@ import torchvision.models as models  # pylint: disable=import-error
 
 from pytorch_boundaries.utils.model_utils import crop_tensor, get_upsampling_weight
 
+
 def conv_weights_init(m):
   if isinstance(m, nn.Conv2d):
-    m.weight.data.normal_(0, 0.1)
+    # m.weight.data.normal_(0, 0.1)
+    m.weight.data.zero_()
     if m.bias is not None:
-        m.bias.data.normal_(0, 0.01)
+        # m.bias.data.normal_(0, 0.01)
+        m.bias.data.zero_()
   elif isinstance(m, nn.BatchNorm2d):
     nn.init.uniform_(m.weight, 0., 1.)
     nn.init.constant_(m.bias, 0)
@@ -22,8 +25,6 @@ class VGG_HED(nn.Module):
     super(VGG_HED, self).__init__()
     self.model_name = config.model_name
     self.num_classes = config.num_classes
-    # self.rgb_mean = np.array((0.485, 0.456, 0.406))
-    # self.rgb_std = np.array((0.229, 0.224, 0.225))
     self.rgb_mean = np.array((0.485, 0.456, 0.406)) * 255.
     self.rgb_std = np.array((0.229, 0.224, 0.225)) * 255.
     # Convert to n, c, h, w
@@ -36,7 +37,7 @@ class VGG_HED(nn.Module):
     elif self.model_name.startswith("vgg16"):
       model = models.vgg16(pretrained=True).cuda()
     # Pad input before VGG
-    self.first_padding = nn.ReflectionPad2d(21)
+    self.first_padding = nn.ZeroPad2d(35)
 
     self.conv_1 = self.extract_layer(model, 
                                      self.model_name, 

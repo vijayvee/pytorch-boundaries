@@ -71,13 +71,13 @@ class BSDSDataProvider(object):
 
   def transform(self, images, labels, xmax=255.):
     """Transform images and ground truth."""
-    if self.is_training:
-      color_transform = transforms.ColorJitter(brightness=0.3,
-                                               contrast=0.3,
-                                               saturation=0.3,
-                                               hue=0.1
-                                               )
-      images = color_transform(images)
+    # if self.is_training:
+    #   color_transform = transforms.ColorJitter(brightness=0.3,
+    #                                            contrast=0.3,
+    #                                            saturation=0.3,
+    #                                            hue=0.1
+    #                                            )
+    #   images = color_transform(images)
     images, labels = np.array(images), np.array(labels)
     if images.max() > 1.:
       images = images / 255
@@ -85,7 +85,13 @@ class BSDSDataProvider(object):
       labels = labels / 255
     if self.is_training:
       gamma = FLAGS.label_gamma
-      labels[labels >= gamma] = 1.
+      if not gamma:
+        labels[labels > 0] = 1
+      else:
+        labels[labels >= gamma] = 1.
+        labels[labels < gamma] = 0.
+    images = np.float32(images)
+    labels = np.float32(labels)
     images = F.to_tensor(images * xmax)
     labels = F.to_tensor(labels)
     return images, labels

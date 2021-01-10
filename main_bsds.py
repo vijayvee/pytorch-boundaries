@@ -32,13 +32,15 @@ flags.DEFINE_float("label_lambda", 1.1,
                    "Positive weight for wce")
 flags.DEFINE_boolean("use_val_for_train", False,
                      "Whether to use validation images (only after hparam search)")
+flags.DEFINE_boolean("summary", True,
+                     "Whether to write tensorboard summary")                     
 flags.DEFINE_integer("batch_size", 1,
                    "Batch size for train/eval")
 flags.DEFINE_integer("num_epochs", 15,
                      "Number of training epochs")
 flags.DEFINE_integer("save_epoch", 1,
                      "Checkpoint saving frequency (in epochs)")
-flags.DEFINE_integer("decay_epochs", 5,
+flags.DEFINE_integer("decay_steps", 10000,
                      "lr decay frequency (in epochs)")
 flags.DEFINE_integer("v1_timesteps", 0,
                      "Number of V1Net timesteps")
@@ -48,6 +50,8 @@ flags.DEFINE_string("optimizer", "",
                     "Optimizer algorithm (Adam, SGD, etc.)")
 flags.DEFINE_string("base_dir", "bsds_experiments",
                     "Base directory to store experiments")
+flags.DEFINE_string("model_name", "vgg16_bn",
+                    "Name of backbone network")
 flags.DEFINE_string("data_dir", "",
                     "Data directory with BSDS500 images")
 flags.DEFINE_string("checkpoint", "",
@@ -121,7 +125,8 @@ def get_params_dict(params_dict,
   return params
 
 def train_epoch(model, train_dataloader,
-                criterion, optimizer, writer):
+                criterion, optimizer, writer,
+                scheduler):
   """Train one epoch."""
   global global_step
   model.train()
@@ -152,14 +157,16 @@ def train_epoch(model, train_dataloader,
     total_loss = fused_loss + side_loss_1 + \
                  side_loss_2 + side_loss_3 + \
                  side_loss_4 + side_loss_5
-    iter_loss += total_loss/FLAGS.update_iters
+    total_loss /= FLAGS.update_iters
+    iter_loss += total_loss
     total_loss.backward()
 
     if not idx % FLAGS.update_iters:
       # Update parameters
       p_epoch_idx = (global_step * FLAGS.update_iters) // len(train_dataloader)
       print("Epoch(%s) - Iter (%s) - Loss: %.4f" % (p_epoch_idx,
-                                                    idx, iter_loss.item()))
+                                                    idx/FLAGS.update_iters, 
+                                                    iter_loss.item()))
       global_step += 1
       side_outputs = [side_output_1, side_output_2,
                       side_output_3, side_output_4,
@@ -167,9 +174,12 @@ def train_epoch(model, train_dataloader,
                       ]
       side_outputs = [torch.sigmoid(i) 
                       for i in side_outputs]
-      add_summary(writer, global_step, iter_loss, 
-                  imgs, lbls, side_outputs, targets_confident)
+      if FLAGS.summary:
+        add_summary(writer, global_step, iter_loss, 
+                    imgs, lbls, side_outputs, targets_confident)
       optimizer.step()
+      if not global_step % FLAGS.decay_steps:
+        scheduler.step()
       optimizer.zero_grad()
       iter_loss = 0
   print("Finished training epoch in %s" % int(time.time() - start_time))
@@ -218,7 +228,7 @@ def main(argv):
                                                  batch_size=FLAGS.batch_size, 
                                                  shuffle=True,
                                                  num_workers=FLAGS.batch_size)
-  model_cfg = vgg16_hed_config("vgg16_bn", 400,
+  model_cfg = vgg16_hed_config(FLAGS.model_name, 400,
                                1, False, False)
   model = VGG_HED(model_cfg)
   model.to(device)
@@ -249,14 +259,10 @@ def main(argv):
   optimizer.zero_grad()
   criterion = cross_entropy_loss2d
   writer = SummaryWriter("runs/%s" % FLAGS.expt_name)
-  # TODO(vveeraba): Write learning rates to tensorboard
-  # log_learning_rates(params, writer)
   for epoch_idx in range(FLAGS.num_epochs):
     train_epoch(model, train_dataloader,
-                criterion, optimizer, writer)
-    if not epoch_idx % FLAGS.decay_epochs:
-      # Decay learning rate every num_epochs/3 epochs
-      scheduler.step()
+                criterion, optimizer, writer,
+                scheduler)
     if not epoch_idx % FLAGS.save_epoch:
       ckpt_dir = os.path.join(FLAGS.base_dir, 
                               FLAGS.expt_name)
