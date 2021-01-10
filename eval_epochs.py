@@ -118,6 +118,9 @@ def main(argv):
     ckpt_out_dir = os.path.join("%s-eval" % checkpoint)
     if not os.path.exists(ckpt_out_dir):
       os.mkdir(ckpt_out_dir)
+    else:
+      print("%s already exists, i.e, evaluated" % ckpt_out_dir)
+      continue
     for output in outputs:
       out_dir = os.path.join(ckpt_out_dir, output)
       if not os.path.exists(out_dir):
