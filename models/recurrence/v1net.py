@@ -1,0 +1,178 @@
+"""V1Net cell."""
+
+import torch.nn as nn  # pylint: disable=import-error
+import torch  # pylint: disable=import-error
+import torch.nn.functional as F  # pylint: disable=import-error
+
+
+def conv_weights_init(m):
+  if isinstance(m, nn.Conv2d):
+    m.weight.data.kaiming_normal_(0, 0.1)
+    if m.bias is not None:
+      m.bias.data.zero_()
+
+
+class V1NetCell(nn.Module):
+  def __init__(self,
+               input_dim, 
+               hidden_dim,
+               kernel_size, 
+               exc_multiplier=3,
+               inh_multiplier=1.5,
+               device='cuda',
+               ):
+    """
+    Initialize V1Net cell.
+    params:
+      input_dim: Integer number of channels of input tensor.
+      hidden_dim: Integer number of channels of hidden state.
+      kernel_size: Tuple size of the convolutional kernel.
+      exc_multiplier: Integer multiplier of excitatory kernel dims
+      inh_multiplier: Integer multiplier of inhibitory kernel dims
+      bias: Boolean Whether or not to add the bias.
+    """
+
+    super(V1NetCell, self).__init__()
+
+    self.input_dim = input_dim
+    self.hidden_dim = hidden_dim
+
+    self.kernel_size = int(kernel_size)
+    self.kernel_size_exc = int(kernel_size * exc_multiplier)
+    self.kernel_size_inh = int(kernel_size * inh_multiplier)
+    self.padding_xh = kernel_size // 2, kernel_size // 2
+    self.padding_exc = self.kernel_size_exc // 2, self.kernel_size_exc // 2
+    self.padding_inh = self.kernel_size_inh //2, self.kernel_size_inh // 2
+    self.xh_depth = self.input_dim + self.hidden_dim
+    self.device = device
+
+    self.conv_xh = nn.Sequential(
+                    nn.Conv2d(self.xh_depth, 
+                              self.xh_depth,
+                              self.kernel_size,
+                              groups=self.xh_depth,
+                              padding=self.padding_xh,
+                              ),
+                    nn.Conv2d(self.xh_depth, 4 * self.hidden_dim, 1))
+    self.conv_exc = nn.Sequential(
+                      nn.Conv2d(self.hidden_dim, 
+                                self.hidden_dim, 
+                                self.kernel_size_exc,
+                                groups=self.hidden_dim,
+                                padding=self.padding_exc,
+                                ),
+                      nn.Conv2d(self.hidden_dim, self.hidden_dim, 1))
+    self.conv_inh = nn.Sequential(
+                      nn.Conv2d(self.hidden_dim, 
+                                self.hidden_dim,
+                                self.kernel_size_inh,
+                                groups=self.hidden_dim,
+                                padding=self.padding_inh,
+                                ),
+                      nn.Conv2d(self.hidden_dim, self.hidden_dim, 1))
+    conv_layers = [self.conv_xh, self.conv_exc, self.conv_inh]
+    for layer in conv_layers:
+      conv_weights_init(layer)
+  
+  def horizontal(self, x_hor, h_hor):
+    """Applies horizontal convolutions.
+    params:
+      x_hor: Torch tensor of horizontal input.
+      h_hor: Tuple of hidden excitatory and horizontal activity.
+    """
+    h_exc, h_shunt = h_hor
+    out_hor = torch.sigmoid(h_shunt) * (x_hor + torch.sigmoid(h_exc))
+    return out_hor
+
+  def forward(self, x, hidden):
+    h, c = hidden
+    x_h = torch.cat([x, h], dim=1)  # concatenate along channel axis
+    res_x_h = self.conv_xh(x_h)
+    res_exc = self.conv_exc(h)
+    res_inh = self.conv_inh(h)
+    h_hor = (res_exc, res_inh)
+
+    i_g, f_g, g_g, o_g = torch.split(res_x_h, self.hidden_dim, dim=1)
+    i = torch.sigmoid(i_g)
+    f = torch.sigmoid(f_g)
+    o = torch.sigmoid(o_g)
+    x_hor = torch.tanh(g_g)
+
+    g = self.horizontal(x_hor, h_hor)
+
+    c_next = f * c + i * g
+    h_next = o * torch.tanh(F.layer_norm(c_next, c_next.shape[1:]))
+
+    return h_next, c_next
+
+  def init_hidden(self, batch_size, image_size):
+    height, width = image_size
+    return (torch.zeros(batch_size, 
+                        self.hidden_dim, 
+                        height, 
+                        width, 
+                        device=self.device),
+            torch.zeros(batch_size, 
+                        self.hidden_dim, 
+                        height, 
+                        width, 
+                        device=self.device))
+
+
+class V1Net(nn.Module):
+  """
+  params:
+    input_dim: Number of channels in input
+    hidden_dim: Number of hidden channels
+    kernel_size: Size of kernel in convolutions
+    exc_multiplier: Multiplier for excitatory kernel dims
+    inh_multiplier: Multiplier for inhibitory kernel dims
+  Output:
+    A tuple of two lists of length num_layers (or length 1 if return_all_layers is False).
+        0 - layer_output_list is the list of lists of length T of each output
+        1 - last_state_list is the list of last states
+                each element of the list is a tuple (h, c) for hidden state and memory
+  Example:
+      >> x = torch.zeros((1, 5, 64, 100, 100)).cuda()
+      >> net = V1Net(64, 64, 5, 3, 1.5)
+      >> net.to('cuda')
+      >> out = net(x)
+  """
+  def __init__(self, input_dim, hidden_dim, 
+               kernel_size, exc_multiplier,
+               inh_multiplier):
+    super(V1Net, self).__init__()
+
+    self.input_dim = input_dim
+    self.hidden_dim = hidden_dim
+    self.kernel_size = kernel_size
+    self.exc_multiplier = exc_multiplier
+    self.inh_multiplier = inh_multiplier
+    
+    self.cell = V1NetCell(input_dim=self.input_dim,
+                          hidden_dim=self.hidden_dim,
+                          kernel_size=self.kernel_size,
+                          exc_multiplier=self.exc_multiplier,
+                          inh_multiplier=self.inh_multiplier)
+
+  def forward(self, input_tensor, hidden_state=None):
+    """
+    Run V1Net iterations.
+    params:
+      input_tensor: 5-D Tensor of shape (b, t, c, h, w)
+    Returns:
+      last_state_list, layer_output
+    """
+    b, _, _, d_h, d_w = input_tensor.size()
+    h, c = self.cell.init_hidden(batch_size=b,
+                                 image_size=(d_h, d_w),
+                                 )
+    seq_len = input_tensor.size(1)
+    l_output = []
+    for t in range(seq_len):
+      h, c = self.cell(x=input_tensor[:, t, :, :, :],
+                       hidden=[h, c])
+      l_output.append(h)
+    layer_output = torch.stack(l_output, dim=1)
+    last_state = [h, c]
+    return layer_output, last_state
