@@ -18,8 +18,8 @@ class V1NetCell(nn.Module):
                input_dim, 
                hidden_dim,
                kernel_size, 
-               exc_multiplier=3,
-               inh_multiplier=1.5,
+               kernel_size_exc,
+               kernel_size_inh,
                device='cuda',
                ):
     """
@@ -28,8 +28,8 @@ class V1NetCell(nn.Module):
       input_dim: Integer number of channels of input tensor.
       hidden_dim: Integer number of channels of hidden state.
       kernel_size: Tuple size of the convolutional kernel.
-      exc_multiplier: Integer multiplier of excitatory kernel dims
-      inh_multiplier: Integer multiplier of inhibitory kernel dims
+      kernel_size_exc: Integer kernel size of excitatory kernel dims
+      kernel_size_inh: Integer kernel size of inhibitory kernel dims
       bias: Boolean Whether or not to add the bias.
     """
 
@@ -39,11 +39,11 @@ class V1NetCell(nn.Module):
     self.hidden_dim = hidden_dim
 
     self.kernel_size = int(kernel_size)
-    self.kernel_size_exc = int(kernel_size * exc_multiplier)
-    self.kernel_size_inh = int(kernel_size * inh_multiplier)
-    self.padding_xh = kernel_size // 2, kernel_size // 2
-    self.padding_exc = self.kernel_size_exc // 2, self.kernel_size_exc // 2
-    self.padding_inh = self.kernel_size_inh //2, self.kernel_size_inh // 2
+    self.kernel_size_exc = kernel_size_exc
+    self.kernel_size_inh = kernel_size_inh
+    self.padding_xh = (kernel_size - 1) // 2, (kernel_size - 1) // 2
+    self.padding_exc = (self.kernel_size_exc - 1) // 2, (self.kernel_size_exc - 1) // 2
+    self.padding_inh = (self.kernel_size_inh - 1) //2, (self.kernel_size_inh - 1) // 2
     self.xh_depth = self.input_dim + self.hidden_dim
     self.device = device
 
@@ -126,8 +126,8 @@ class V1Net(nn.Module):
     input_dim: Number of channels in input
     hidden_dim: Number of hidden channels
     kernel_size: Size of kernel in convolutions
-    exc_multiplier: Multiplier for excitatory kernel dims
-    inh_multiplier: Multiplier for inhibitory kernel dims
+    kernel_size_exc: kernel size for excitatory kernel dims
+    kernel_size_inh: kernel size for inhibitory kernel dims
   Output:
     A tuple of two lists of length num_layers (or length 1 if return_all_layers is False).
         0 - layer_output_list is the list of lists of length T of each output
@@ -140,21 +140,21 @@ class V1Net(nn.Module):
       >> out = net(x)
   """
   def __init__(self, input_dim, hidden_dim, 
-               kernel_size, exc_multiplier,
-               inh_multiplier):
+               kernel_size, kernel_size_exc,
+               kernel_size_inh):
     super(V1Net, self).__init__()
 
     self.input_dim = input_dim
     self.hidden_dim = hidden_dim
     self.kernel_size = kernel_size
-    self.exc_multiplier = exc_multiplier
-    self.inh_multiplier = inh_multiplier
+    self.kernel_size_exc = kernel_size_exc
+    self.kernel_size_inh = kernel_size_inh
     
     self.cell = V1NetCell(input_dim=self.input_dim,
                           hidden_dim=self.hidden_dim,
                           kernel_size=self.kernel_size,
-                          exc_multiplier=self.exc_multiplier,
-                          inh_multiplier=self.inh_multiplier)
+                          kernel_size_exc = self.kernel_size_exc,
+                          kernel_size_inh = self.kernel_size_inh)
 
   def forward(self, input_tensor, hidden_state=None):
     """
