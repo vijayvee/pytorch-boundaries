@@ -1,11 +1,12 @@
 """V1Net cell."""
 
-import torch.nn as nn  # pylint: disable=import-error
 import torch  # pylint: disable=import-error
+import torch.nn as nn  # pylint: disable=import-error
 import torch.nn.functional as F  # pylint: disable=import-error
 
 
 def conv_weights_init(m):
+  """Initialize conv kernel weights for V1Net."""
   if isinstance(m, nn.Conv2d):
     m.weight.data.kaiming_normal_(0, 0.1)
     if m.bias is not None:
