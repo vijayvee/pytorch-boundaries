@@ -38,11 +38,13 @@ class BSDSDataProvider(object):
                image_size,
                is_training,
                data_dir,
+               cam=False,
                ):
     self.image_size = image_size
     self.is_training = is_training
     self.data_dir = data_dir
     self.img_gt_paths = []
+    self.cam = cam
 
     if self.is_training:
       self.data_file = os.path.join(self.data_dir,
@@ -91,11 +93,20 @@ class BSDSDataProvider(object):
 
   def __getitem__(self, idx):
     img, gt = self.img_gt_paths[idx]
+    cam = img.replace("jpg", "npy")
     img = os.path.join(self.data_dir, img)
     gt = os.path.join(self.data_dir, gt)
+    cam = os.path.join(self.data_dir, cam)
+    
     img = Image.open(img).convert("RGB")
     gt = Image.open(gt).convert("L")
     img, gt = self.transform(img, gt)
+    if self.cam:
+      cam = np.load(cam)
+      cam = (cam - cam.min()) / (cam.max() - cam.min())
+      cam = np.float32(cam)
+      cam = F.to_tensor(cam)
+      return img, gt, cam
     return img, gt
 
   def __len__(self):

@@ -18,6 +18,7 @@ from pytorch_boundaries.data_provider import BSDSDataProvider
 from pytorch_boundaries.losses import cross_entropy_loss2d
 from pytorch_boundaries.models.vgg16_config import vgg16_hed_config
 from pytorch_boundaries.models.vgg_16_hed import VGG_HED
+from pytorch_boundaries.models.vgg_16_hed_cam import VGG_HED_CAM
 
 FLAGS = flags.FLAGS
 
@@ -66,6 +67,17 @@ def get_params_dict(params_dict,
   params = []
   for k, v in params_dict.items():
     if re.match("conv_[1-4]*", k):
+      if "weight" in k:
+        params += [{'params': v, 
+                    'lr': base_lr*1,
+                    'weight_decay': weight_decay*1,
+                    'name': k}]
+      if "bias" in k:
+        params += [{'params': v,
+                    'lr': base_lr*2, 
+                    'weight_decay': 0,
+                    'name': k}]
+    elif re.match("cam_conv[1-3]*", k):
       if "weight" in k:
         params += [{'params': v, 
                     'lr': base_lr*1,
@@ -134,10 +146,17 @@ def train_epoch(model, train_dataloader,
   optimizer.zero_grad()
   loss_fun = F.binary_cross_entropy_with_logits
 
-  for idx, (imgs, lbls) in enumerate(train_dataloader):
+  for idx, data in enumerate(train_dataloader):
     # Load images and labels
-    imgs, lbls = imgs.float().cuda(), lbls.float().cuda()
-    tensors = model(imgs)
+    if "cam" in FLAGS.model_name:
+      imgs, lbls, cam = data
+      imgs, lbls, cam = imgs.float().cuda(), lbls.float().cuda(), \
+                        cam.float().cuda()
+      tensors = model(imgs, cam)
+    else:
+      imgs, lbls = data
+      imgs, lbls = imgs.float().cuda(), lbls.float().cuda()
+      tensors = model(imgs)
 
     side_output_1 = tensors["side_output_1"].float()
     side_output_3 = tensors["side_output_3"].float()
@@ -174,8 +193,10 @@ def train_epoch(model, train_dataloader,
       side_outputs = [torch.sigmoid(i) 
                       for i in side_outputs]
       if FLAGS.summary:
-        add_summary(writer, global_step, iter_loss, 
-                    imgs, lbls, side_outputs, targets_confident)
+        if "cam" in FLAGS.model_name:
+          add_summary(writer, global_step, iter_loss, 
+                      imgs, lbls, side_outputs, targets_confident,
+                      cam_maps=cam)
       optimizer.step()
       if not global_step % FLAGS.decay_steps:
         scheduler.step()
@@ -185,7 +206,8 @@ def train_epoch(model, train_dataloader,
 
 
 def add_summary(writer, idx, loss, 
-                images, labels, outputs, labels_confident):
+                images, labels, outputs, labels_confident,
+                cam_maps=None):
   """Write tensorboard summaries."""
   output_titles = ["side_output_%s" % i for i in range(1, 6)]
   output_titles += ["fused_prediction"]
@@ -199,7 +221,10 @@ def add_summary(writer, idx, loss,
   writer.add_scalar("Limits/Images_Max", images.max(), idx)
   writer.add_scalar("Limits/Labels_Max", labels.max(), idx)
   writer.add_image("Images/images", img_grid, idx)
-  writer.add_image("Labels/labels_unfiltered", labels_grid, idx)
+  # writer.add_image("Labels/labels_unfiltered", labels_grid, idx)
+  if cam_maps is not None:
+    cam_grid = torchvision.utils.make_grid(cam_maps)
+    writer.add_image("CAM/cam_maps", cam_grid, idx)
   writer.add_image("Labels/labels_filtered", labels_conf_grid, idx)
   for ii, (output_grid, output_title) in enumerate(zip(outputs_grid, output_titles)):
     writer.add_image("Predictions/%s" % output_title, 
@@ -222,14 +247,19 @@ def main(argv):
   full_start = time.time()
   train_data = BSDSDataProvider(image_size=400,
                                 is_training=True,
-                                data_dir=FLAGS.data_dir)
+                                data_dir=FLAGS.data_dir,
+                                cam="cam" in FLAGS.model_name)
   train_dataloader = torch.utils.data.DataLoader(train_data,
                                                  batch_size=FLAGS.batch_size, 
                                                  shuffle=True,
-                                                 num_workers=FLAGS.batch_size)
+                                                 num_workers=FLAGS.batch_size,
+                                                 )
   model_cfg = vgg16_hed_config(FLAGS.model_name, 400,
                                1, False, False)
-  model = VGG_HED(model_cfg)
+  if "cam" in FLAGS.model_name:
+    model = VGG_HED_CAM(model_cfg)
+  else:
+    model = VGG_HED(model_cfg)
   model.to(device)
 
   if FLAGS.checkpoint:
