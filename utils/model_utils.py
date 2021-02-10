@@ -32,3 +32,49 @@ def get_upsampling_weight(in_channels=1, out_channels=1, kernel_size=4):
   weight = torch.from_numpy(weight).float()
   weight = weight.cuda()
   return weight
+
+def tile_tensor(net, timesteps):
+  """Tile tensor timesteps times for temporally varying input."""
+  n, c, h, w = net.shape
+  net_tiled = net.repeat(timesteps, 1, 1, 1, 1).view(timesteps, n, c, h, w)
+  net_tiled = torch.transpose(net_tiled, 1, 0)
+  return net_tiled
+
+
+def genFilterBank(nTheta=8, kernel_size=15, phase=("on", "off")):
+  """Generates a bank of gabor filters."""
+  def norm(x):
+    """Normalize input to [-1, 1]."""
+    x = (x - x.min())/(x.max() - x.min())
+    return 2*x-1
+
+  def genGabor(sz, omega, theta, func=np.cos, K=np.pi):
+    """Generate a single gabor filter."""
+    radius = (int(sz[0]/2.0), int(sz[1]/2.0))
+    [x, y] = np.meshgrid(range(-radius[0], radius[0]+1), range(-radius[1], radius[1]+1))
+
+    x1 = x * np.cos(theta) + y * np.sin(theta)
+    y1 = -x * np.sin(theta) + y * np.cos(theta)
+    
+    gauss = omega**2 / (4*np.pi * K**2) * np.exp(- omega**2 / (8*K**2) * ( 4 * x1**2 + y1**2))
+    sinusoid = func(omega * x1) * np.exp(K**2 / 2)
+    gabor = gauss * sinusoid
+    return gabor
+
+  theta = np.arange(0, np.pi, np.pi/nTheta) # range of theta
+  omega = np.arange(1., 1.01, 0.1) # range of omega
+  params = [(t,o) for o in omega for t in theta]
+  sinFilterBank = []
+  cosFilterBank = []
+  gaborParams = []
+
+  for (t, o) in params:
+      gaborParam = {'omega':o, 'theta':t, 'sz':(kernel_size, kernel_size)}
+      cosGabor = norm(genGabor(func=np.cos, **gaborParam))
+      if "on" in phase:
+        cosFilterBank.append(cosGabor)
+      if "off" in phase:
+        cosFilterBank.append(-cosGabor)
+  cosFilterBank = np.array(cosFilterBank)
+  cosFilterBank = np.expand_dims(cosFilterBank, axis=1)
+  return cosFilterBank
