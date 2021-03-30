@@ -1,9 +1,9 @@
 """V1Net cell."""
 
+import numpy as np
 import torch  # pylint: disable=import-error
 import torch.nn as nn  # pylint: disable=import-error
 import torch.nn.functional as F  # pylint: disable=import-error
-import numpy as np
 from pytorch_boundaries.utils.model_utils import genFilterBank
 
 
@@ -11,6 +11,24 @@ def conv_weights_init(m):
   """Initialize conv kernel weights for V1Net."""
   if isinstance(m, nn.Conv2d):
     m.weight.data.kaiming_normal_(0, 0.1)
+    if m.bias is not None:
+      m.bias.data.zero_()
+
+def gabor_init(m, nTheta=8, kernel_size=15):
+  if isinstance(m, nn.Conv2d):
+    filters = np.float32(genFilterBank(nTheta=nTheta, 
+                                       kernel_size=kernel_size))
+    filters = torch.from_numpy(filters)
+    m.weight.data = filters
+    m.weight.requires_grad = False
+    if m.bias is not None:
+      m.bias.data.zero_()
+
+def horizontal_weights_init(m):
+  """Non-negative initialization of horizontal connection weights."""
+  if isinstance(m, nn.Conv2d):
+    m.weight.data.uniform_(0, 0.1)
+    m.weight.data.clamp_(0)
     if m.bias is not None:
       m.bias.data.zero_()
 
@@ -181,17 +199,6 @@ class V1Net(nn.Module):
     return layer_output, last_state
 
 
-def gabor_init(m, nTheta=8, kernel_size=15):
-  if isinstance(m, nn.Conv2d):
-    filters = np.float32(genFilterBank(nTheta=nTheta, 
-                                       kernel_size=kernel_size))
-    filters = torch.from_numpy(filters)
-    m.weight.data = filters
-    m.weight.requires_grad = False
-    if m.bias is not None:
-      m.bias.data.zero_()
-
-
 class ReducedV1NetCell(nn.Module):
   def __init__(self,
                input_dim, 
@@ -245,9 +252,13 @@ class ReducedV1NetCell(nn.Module):
                               padding=self.padding_inh,
                               )
 
-    conv_layers = [self.conv_xg, self.conv_hg, self.conv_exc, self.conv_inh]
+    conv_layers = [self.conv_xg, self.conv_hg]
+    horizontal_layers = [self.conv_exc, self.conv_inh]
     for layer in conv_layers:
       conv_weights_init(layer)
+    
+    for layer in horizontal_layers:
+      horizontal_weights_init(layer)
   
   def horizontal(self, x_hor, h_hor):
     """Applies horizontal convolutions.
@@ -256,7 +267,7 @@ class ReducedV1NetCell(nn.Module):
       h_hor: Tuple of hidden excitatory and horizontal activity.
     """
     h_exc, h_shunt = h_hor
-    out_hor = torch.sigmoid(-h_shunt) * (x_hor + h_exc)
+    out_hor = torch.sigmoid(-h_shunt) * (x_hor +  h_exc)
     return out_hor
 
   def forward(self, x, hidden):
