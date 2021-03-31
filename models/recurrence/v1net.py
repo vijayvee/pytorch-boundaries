@@ -74,7 +74,7 @@ class V1NetCell(nn.Module):
                               groups=self.xh_depth,
                               padding=self.padding_xh,
                               ),
-                    nn.Conv2d(self.xh_depth, 4 * self.hidden_dim, 1))
+                    nn.Conv2d(self.xh_depth, 3 * self.hidden_dim, 1))
     self.conv_exc = nn.Sequential(
                       nn.Conv2d(self.hidden_dim, 
                                 self.hidden_dim, 
@@ -113,16 +113,15 @@ class V1NetCell(nn.Module):
     res_inh = self.conv_inh(h)
     h_hor = (res_exc, res_inh)
 
-    i_g, f_g, g_g, o_g = torch.split(res_x_h, self.hidden_dim, dim=1)
-    i = torch.sigmoid(i_g)
+    f_g, g_g, o_g = torch.split(res_x_h, self.hidden_dim, dim=1)
     f = torch.sigmoid(f_g)
     o = torch.sigmoid(o_g)
-    x_hor = torch.tanh(g_g)
+    x_hor = F.relu(g_g)
 
     g = self.horizontal(x_hor, h_hor)
 
-    c_next = f * c + i * g
-    h_next = o * torch.tanh(F.layer_norm(c_next, c_next.shape[1:]))
+    c_next = f * c + (1-f) * g
+    h_next = o * F.relu(F.layer_norm(c_next, c_next.shape[1:]))
 
     return h_next, c_next
 
